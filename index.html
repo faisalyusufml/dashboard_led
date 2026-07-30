@@ -33,6 +33,15 @@
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
+        #status-info {
+            padding: 10px 15px;
+            border-radius: 5px;
+            background-color: #e2e3e5;
+            color: #383d41;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+        }
         #map {
             height: 450px;
             width: 100%;
@@ -54,6 +63,8 @@
     <div class="container">
         <h1>Dasbor Validasi PJU Pemkot Makassar</h1>
 
+        <div id="status-info">Memuat data dari Google Sheets...</div>
+
         <!-- Kartu 1: Peta Interaktif -->
         <div class="card">
             <h2>Peta Persebaran Titik PJU</h2>
@@ -68,88 +79,142 @@
     </div>
 
     <script>
-        // Tautan Proxy ke CSV Google Sheets Anda agar tidak terblokir CORS
         const sheetId = '13TnOh22NXoQAzdabsR-wOYkTjqm0yudW3GiR37KgHNE';
         const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
 
-        // 1. Inisialisasi Peta (Pusat di Makassar)
+        // 1. Inisialisasi Peta Makassar
         const map = L.map('map').setView([-5.147665, 119.432731], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        // 2. Baca Data dari Google Sheets menggunakan PapaParse
+        const markersGroup = L.featureGroup().addTo(map);
+
+        // 2. Load Data CSV
         Papa.parse(csvUrl, {
             download: true,
             header: true,
+            skipEmptyLines: true,
             complete: function(results) {
                 const data = results.data;
-                console.log("Data berhasil dimuat:", data);
+                const statusDiv = document.getElementById('status-info');
+
+                if (!data || data.length === 0) {
+                    statusDiv.style.backgroundColor = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                    statusDiv.innerHTML = 'Gagal memuat data / file Google Sheets kosong.';
+                    return;
+                }
+
+                console.log("Header yang terdeteksi:", Object.keys(data[0]));
+
+                // Fungsi bantu untuk mencari nilai kolom tanpa memedulikan spasi & kapitalisasi
+                function getFieldValue(row, possibleNames) {
+                    const keys = Object.keys(row);
+                    for (let name of possibleNames) {
+                        const matchedKey = keys.find(k => k.trim().toLowerCase() === name.toLowerCase());
+                        if (matchedKey && row[matchedKey]) {
+                            return row[matchedKey].toString().trim();
+                        }
+                    }
+                    return '';
+                }
 
                 const lampCounts = {};
                 let markersAdded = 0;
 
                 data.forEach(row => {
-                    // a. Olah Data Grafik Jenis Lampu
-                    const jenis = row['JENIS LAMPU'];
+                    // Cek Jenis Lampu
+                    const jenis = getFieldValue(row, ['JENIS LAMPU', 'JENIS_LAMPU', 'LAMPU', 'JENIS']);
                     if (jenis) {
                         lampCounts[jenis] = (lampCounts[jenis] || 0) + 1;
                     }
 
-                    // b. Olah Data Peta Koordinat
-                    const koordinatRaw = row['KOORDINAT'];
+                    // Cek Koordinat
+                    let lat = null, lng = null;
+
+                    const koordinatRaw = getFieldValue(row, ['KOORDINAT', 'KOORDINAT LOKASI', 'TITIK KOORDINAT']);
                     if (koordinatRaw && koordinatRaw.includes(',')) {
-                        // Memisahkan latitude dan longitude
-                        const coords = koordinatRaw.split(',');
-                        const lat = parseFloat(coords[0].trim());
-                        const lng = parseFloat(coords[1].trim());
-
-                        // Memastikan koordinat valid
-                        if (!isNaN(lat) && !isNaN(lng)) {
-                            // Buat Popup Informasi pada Marker Peta
-                            const popupText = `
-                                <b>Alamat:</b> ${row['ALAMAT'] || '-'}<br>
-                                <b>Jenis Lampu:</b> ${row['JENIS LAMPU'] || '-'}<br>
-                                <b>Watt:</b> ${row['WATT'] || '-'} W<br>
-                                <b>Kondisi:</b> ${row['NYALA / PADAM PADA SIANG HARI'] || '-'}
-                            `;
-
-                            L.marker([lat, lng])
-                             .addTo(map)
-                             .bindPopup(popupText);
-                            
-                            markersAdded++;
+                        const parts = koordinatRaw.split(',');
+                        lat = parseFloat(parts[0].trim());
+                        lng = parseFloat(parts[1].trim());
+                    } else {
+                        // Jika terpisah LATITUDE dan LONGITUDE
+                        const latRaw = getFieldValue(row, ['LATITUDE', 'LAT']);
+                        const lngRaw = getFieldValue(row, ['LONGITUDE', 'LNG', 'LONG']);
+                        if (latRaw && lngRaw) {
+                            lat = parseFloat(latRaw);
+                            lng = parseFloat(lngRaw);
                         }
+                    }
+
+                    // Tambahkan Marker jika koordinat valid
+                    if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+                        const alamat = getFieldValue(row, ['ALAMAT', 'LOKASI', 'NAMA JALAN']) || '-';
+                        const watt = getFieldValue(row, ['WATT', 'DAYA']) || '-';
+                        const kondisi = getFieldValue(row, ['NYALA / PADAM PADA SIANG HARI', 'KONDISI', 'STATUS']) || '-';
+
+                        const popupContent = `
+                            <div style="font-size: 13px;">
+                                <b>Alamat:</b> ${alamat}<br>
+                                <b>Jenis Lampu:</b> ${jenis || '-'}<br>
+                                <b>Watt:</b> ${watt} W<br>
+                                <b>Kondisi:</b> ${kondisi}
+                            </div>
+                        `;
+
+                        const marker = L.marker([lat, lng]).bindPopup(popupContent);
+                        markersGroup.addLayer(marker);
+                        markersAdded++;
                     }
                 });
 
-                // 3. Buat Grafik Chart.js
+                // Update Status Info
+                statusDiv.style.backgroundColor = '#d4edda';
+                statusDiv.style.color = '#155724';
+                statusDiv.innerHTML = `Data Berhasil Dimuat! Total Baris: ${data.length} | Titik di Peta: ${markersAdded}`;
+
+                // Jika ada titik di peta, atur zoom peta agar mencakup seluruh titik
+                if (markersAdded > 0) {
+                    map.fitBounds(markersGroup.getBounds());
+                }
+
+                // 3. Render Grafik Chart.js
                 const labels = Object.keys(lampCounts);
                 const values = Object.values(lampCounts);
 
-                const ctx = document.getElementById('myChart').getContext('2d');
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: 'Jumlah Titik Lampu',
-                            data: values,
-                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            y: { beginAtZero: true }
+                if (labels.length > 0) {
+                    const ctx = document.getElementById('myChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Jumlah Titik Lampu',
+                                data: values,
+                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: { display: true }
+                            },
+                            scales: {
+                                y: { beginAtZero: true }
+                            }
                         }
-                    }
-                });
+                    });
+                }
             },
             error: function(err) {
                 console.error("Gagal membaca CSV:", err);
+                const statusDiv = document.getElementById('status-info');
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                statusDiv.innerHTML = 'Terjadi kesalahan saat mengunduh data CSV dari Google Sheets.';
             }
         });
     </script>
