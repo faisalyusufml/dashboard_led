@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dasbor Publik Google Sheets</title>
+    <title>Dasbor Validasi PJU Pemkot Makassar</title>
     <!-- CSS Sederhana -->
     <style>
         body {
@@ -35,15 +35,13 @@
 <body>
 
     <div class="container">
-        <h1>Dasbor Data Real-Time</h1>
+        <h1>Dasbor Jumlah Titik Per Jenis Lampu PJU</h1>
         <canvas id="myChart"></canvas>
     </div>
 
     <script>
-        // PASTE TAUTAN CSV GOOGLE SHEETS ANDA DI SINI:
-       
-        // FORMAT TAUTAN CSV YANG BENAR:
-const csvUrl = 'https://docs.google.com/spreadsheets/d/13TnOh22NXoQAzdabsR-wOYkTjqm0yudW3GiR37KgHNE/export?format=csv';
+        // Tautan ekspor CSV dari Google Sheets Anda
+        const csvUrl = 'https://docs.google.com/spreadsheets/d/13TnOh22NXoQAzdabsR-wOYkTjqm0yudW3GiR37KgHNE/export?format=csv';
 
         Papa.parse(csvUrl, {
             download: true,
@@ -51,19 +49,27 @@ const csvUrl = 'https://docs.google.com/spreadsheets/d/13TnOh22NXoQAzdabsR-wOYkT
             complete: function(results) {
                 const data = results.data;
                 
-                // ASUMSI: Kolom pertama di Google Sheets bernama "Kategori" dan kolom kedua bernama "Jumlah"
-                // Sesuaikan nama kolom di bawah ini dengan nama header di Google Sheets Anda
-                const labels = data.map(row => row.Kategori); 
-                const values = data.map(row => parseFloat(row.Jumlah)); 
+                // Menghitung jumlah titik lampu berdasarkan "JENIS LAMPU"
+                const lampCounts = {};
+                
+                data.forEach(row => {
+                    const jenis = row['JENIS LAMPU'];
+                    if (jenis) {
+                        lampCounts[jenis] = (lampCounts[jenis] || 0) + 1;
+                    }
+                });
 
-                // Membuat Grafik
+                const labels = Object.keys(lampCounts);
+                const values = Object.values(lampCounts);
+
+                // Membuat Grafik Bar
                 const ctx = document.getElementById('myChart').getContext('2d');
                 new Chart(ctx, {
-                    type: 'bar', // Jenis grafik: bar, line, pie, doughnut, dll.
+                    type: 'bar',
                     data: {
                         labels: labels,
                         datasets: [{
-                            label: 'Jumlah Data',
+                            label: 'Jumlah Titik Lampu',
                             data: values,
                             backgroundColor: 'rgba(54, 162, 235, 0.6)',
                             borderColor: 'rgba(54, 162, 235, 1)',
@@ -74,7 +80,17 @@ const csvUrl = 'https://docs.google.com/spreadsheets/d/13TnOh22NXoQAzdabsR-wOYkT
                         responsive: true,
                         scales: {
                             y: {
-                                beginAtZero: true
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Jumlah Titik'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Jenis Lampu'
+                                }
                             }
                         }
                     }
