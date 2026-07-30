@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dasbor Publik Google Sheets</title>
+    <!-- CSS Sederhana -->
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f7f6;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        canvas {
+            max-width: 100%;
+        }
+    </style>
+    <!-- Library Chart.js dan PapaParse (untuk baca CSV) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Dasbor Data Real-Time</h1>
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <script>
+        // PASTE TAUTAN CSV GOOGLE SHEETS ANDA DI SINI:
+        const csvUrl = 'GANTI_DENGAN_TAUTAN_CSV_GOOGLE_SHEETS_ANDA';
+
+        Papa.parse(csvUrl, {
+            download: true,
+            header: true,
+            complete: function(results) {
+                const data = results.data;
+                
+                // ASUMSI: Kolom pertama di Google Sheets bernama "Kategori" dan kolom kedua bernama "Jumlah"
+                // Sesuaikan nama kolom di bawah ini dengan nama header di Google Sheets Anda
+                const labels = data.map(row => row.Kategori); 
+                const values = data.map(row => parseFloat(row.Jumlah)); 
+
+                // Membuat Grafik
+                const ctx = document.getElementById('myChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar', // Jenis grafik: bar, line, pie, doughnut, dll.
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Jumlah Data',
+                            data: values,
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
