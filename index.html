@@ -73,7 +73,7 @@
 
         <!-- Kartu 2: Grafik Jenis Lampu -->
         <div class="card">
-            <h2>Jumlah Titik Berdasarkan Jenis Lampu</h2>
+            <h2>Jumlah Titik Berdasarkan Jenis / Merk Lampu</h2>
             <canvas id="myChart"></canvas>
         </div>
     </div>
@@ -90,91 +90,79 @@
 
         const markersGroup = L.featureGroup().addTo(map);
 
-        // 2. Load Data CSV
+        // 2. Load Data CSV (Pakai header: false agar bisa membaca kolom dengan nama ganda secara urut indeks)
         Papa.parse(csvUrl, {
             download: true,
-            header: true,
+            header: false,
             skipEmptyLines: true,
             complete: function(results) {
-                const data = results.data;
+                const rows = results.data;
                 const statusDiv = document.getElementById('status-info');
 
-                if (!data || data.length === 0) {
+                if (!rows || rows.length <= 1) {
                     statusDiv.style.backgroundColor = '#f8d7da';
                     statusDiv.style.color = '#721c24';
                     statusDiv.innerHTML = 'Gagal memuat data / file Google Sheets kosong.';
                     return;
                 }
 
-                console.log("Header yang terdeteksi:", Object.keys(data[0]));
-
-                // Fungsi bantu untuk mencari nilai kolom tanpa memedulikan spasi & kapitalisasi
-                function getFieldValue(row, possibleNames) {
-                    const keys = Object.keys(row);
-                    for (let name of possibleNames) {
-                        const matchedKey = keys.find(k => k.trim().toLowerCase() === name.toLowerCase());
-                        if (matchedKey && row[matchedKey]) {
-                            return row[matchedKey].toString().trim();
-                        }
-                    }
-                    return '';
-                }
+                // Ambil Baris Header (Baris 0)
+                const headers = rows[0].map(h => h.trim());
+                
+                // Cari Indeks Kolom Berdasarkan Posisinya
+                const idxAlamat = headers.indexOf('Alamat');
+                const idxKoordinat = headers.indexOf('Koordinat');
+                
+                // Ambil "Jenis Lampu" Pertama (Indeks pertama yang ketemu)
+                const idxJenisLampu = headers.indexOf('Jenis Lampu');
+                const idxWatt = headers.indexOf('Watt');
 
                 const lampCounts = {};
                 let markersAdded = 0;
 
-                data.forEach(row => {
-                    // Cek Jenis Lampu
-                    const jenis = getFieldValue(row, ['JENIS LAMPU', 'JENIS_LAMPU', 'LAMPU', 'JENIS']);
-                    if (jenis) {
-                        lampCounts[jenis] = (lampCounts[jenis] || 0) + 1;
+                // Loop dari Baris ke-1 (Abaikan Header di Baris 0)
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    
+                    const alamat = idxAlamat !== -1 ? row[idxAlamat] : '-';
+                    const koordinatRaw = idxKoordinat !== -1 ? row[idxKoordinat] : '';
+                    const jenis = idxJenisLampu !== -1 ? row[idxJenisLampu] : '';
+                    const watt = idxWatt !== -1 ? row[idxWatt] : '-';
+
+                    // Hitung Grafik Jenis/Merk Lampu
+                    if (jenis && jenis.trim() !== '') {
+                        const namaJenis = jenis.trim();
+                        lampCounts[namaJenis] = (lampCounts[namaJenis] || 0) + 1;
                     }
 
-                    // Cek Koordinat
-                    let lat = null, lng = null;
-
-                    const koordinatRaw = getFieldValue(row, ['KOORDINAT', 'KOORDINAT LOKASI', 'TITIK KOORDINAT']);
+                    // Plot Koordinat di Peta
                     if (koordinatRaw && koordinatRaw.includes(',')) {
                         const parts = koordinatRaw.split(',');
-                        lat = parseFloat(parts[0].trim());
-                        lng = parseFloat(parts[1].trim());
-                    } else {
-                        // Jika terpisah LATITUDE dan LONGITUDE
-                        const latRaw = getFieldValue(row, ['LATITUDE', 'LAT']);
-                        const lngRaw = getFieldValue(row, ['LONGITUDE', 'LNG', 'LONG']);
-                        if (latRaw && lngRaw) {
-                            lat = parseFloat(latRaw);
-                            lng = parseFloat(lngRaw);
+                        const lat = parseFloat(parts[0].trim());
+                        const lng = parseFloat(parts[1].trim());
+
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            const popupContent = `
+                                <div style="font-size: 13px;">
+                                    <b>Alamat:</b> ${alamat || '-'}<br>
+                                    <b>Jenis/Merk:</b> ${jenis || '-'}<br>
+                                    <b>Watt:</b> ${watt || '-'} W
+                                </div>
+                            `;
+
+                            const marker = L.marker([lat, lng]).bindPopup(popupContent);
+                            markersGroup.addLayer(marker);
+                            markersAdded++;
                         }
                     }
-
-                    // Tambahkan Marker jika koordinat valid
-                    if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-                        const alamat = getFieldValue(row, ['ALAMAT', 'LOKASI', 'NAMA JALAN']) || '-';
-                        const watt = getFieldValue(row, ['WATT', 'DAYA']) || '-';
-                        const kondisi = getFieldValue(row, ['NYALA / PADAM PADA SIANG HARI', 'KONDISI', 'STATUS']) || '-';
-
-                        const popupContent = `
-                            <div style="font-size: 13px;">
-                                <b>Alamat:</b> ${alamat}<br>
-                                <b>Jenis Lampu:</b> ${jenis || '-'}<br>
-                                <b>Watt:</b> ${watt} W<br>
-                                <b>Kondisi:</b> ${kondisi}
-                            </div>
-                        `;
-
-                        const marker = L.marker([lat, lng]).bindPopup(popupContent);
-                        markersGroup.addLayer(marker);
-                        markersAdded++;
-                    }
-                });
+                }
 
                 // Update Status Info
                 statusDiv.style.backgroundColor = '#d4edda';
                 statusDiv.style.color = '#155724';
-                statusDiv.innerHTML = `Data Berhasil Dimuat! Total Baris: ${data.length} | Titik di Peta: ${markersAdded}`;
+                statusDiv.innerHTML = `Berhasil Dimuat! Total Baris Data: ${rows.length - 1} | Titik Peta Tampil: ${markersAdded}`;
 
-                // Jika ada titik di peta, atur zoom peta agar mencakup seluruh titik
+                // Auto Fit Zoom Peta
                 if (markersAdded > 0) {
                     map.fitBounds(markersGroup.getBounds());
                 }
@@ -190,31 +178,26 @@
                         data: {
                             labels: labels,
                             datasets: [{
-                                label: 'Jumlah Titik Lampu',
+                                label: 'Jumlah Unit Titik',
                                 data: values,
-                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                                borderColor: 'rgba(54, 162, 235, 1)',
+                                backgroundColor: [
+                                    'rgba(54, 162, 235, 0.6)',
+                                    'rgba(255, 99, 132, 0.6)',
+                                    'rgba(75, 192, 192, 0.6)',
+                                    'rgba(255, 206, 86, 0.6)',
+                                    'rgba(153, 102, 255, 0.6)'
+                                ],
                                 borderWidth: 1
                             }]
                         },
                         options: {
                             responsive: true,
-                            plugins: {
-                                legend: { display: true }
-                            },
                             scales: {
                                 y: { beginAtZero: true }
                             }
                         }
                     });
                 }
-            },
-            error: function(err) {
-                console.error("Gagal membaca CSV:", err);
-                const statusDiv = document.getElementById('status-info');
-                statusDiv.style.backgroundColor = '#f8d7da';
-                statusDiv.style.color = '#721c24';
-                statusDiv.innerHTML = 'Terjadi kesalahan saat mengunduh data CSV dari Google Sheets.';
             }
         });
     </script>
