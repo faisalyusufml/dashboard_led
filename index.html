@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dasbor Validasi PJU Pemkot Makassar</title>
-    <!-- CSS Sederhana -->
+    <title>Dasbor Interaktif PJU Pemkot Makassar</title>
+    
+    <!-- CSS Leaflet (Untuk Peta) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -15,54 +18,115 @@
         h1 {
             text-align: center;
             color: #333;
+            margin-bottom: 20px;
         }
         .container {
-            max-width: 900px;
+            max-width: 1100px;
             margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
+        #map {
+            height: 450px;
+            width: 100%;
+            border-radius: 8px;
+        }
         canvas {
             max-width: 100%;
+            max-height: 400px;
         }
     </style>
-    <!-- Library Chart.js dan PapaParse (untuk baca CSV) -->
+
+    <!-- Library JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
     <div class="container">
-        <h1>Dasbor Jumlah Titik Per Jenis Lampu PJU</h1>
-        <canvas id="myChart"></canvas>
+        <h1>Dasbor Validasi PJU Pemkot Makassar</h1>
+
+        <!-- Kartu 1: Peta Interaktif -->
+        <div class="card">
+            <h2>Peta Persebaran Titik PJU</h2>
+            <div id="map"></div>
+        </div>
+
+        <!-- Kartu 2: Grafik Jenis Lampu -->
+        <div class="card">
+            <h2>Jumlah Titik Berdasarkan Jenis Lampu</h2>
+            <canvas id="myChart"></canvas>
+        </div>
     </div>
 
     <script>
-        // Tautan ekspor CSV dari Google Sheets Anda
-        const csvUrl = 'https://docs.google.com/spreadsheets/d/13TnOh22NXoQAzdabsR-wOYkTjqm0yudW3GiR37KgHNE/export?format=csv';
+        // Tautan Proxy ke CSV Google Sheets Anda agar tidak terblokir CORS
+        const sheetId = '13TnOh22NXoQAzdabsR-wOYkTjqm0yudW3GiR37KgHNE';
+        const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
 
+        // 1. Inisialisasi Peta (Pusat di Makassar)
+        const map = L.map('map').setView([-5.147665, 119.432731], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 2. Baca Data dari Google Sheets menggunakan PapaParse
         Papa.parse(csvUrl, {
             download: true,
             header: true,
             complete: function(results) {
                 const data = results.data;
-                
-                // Menghitung jumlah titik lampu berdasarkan "JENIS LAMPU"
+                console.log("Data berhasil dimuat:", data);
+
                 const lampCounts = {};
-                
+                let markersAdded = 0;
+
                 data.forEach(row => {
+                    // a. Olah Data Grafik Jenis Lampu
                     const jenis = row['JENIS LAMPU'];
                     if (jenis) {
                         lampCounts[jenis] = (lampCounts[jenis] || 0) + 1;
                     }
+
+                    // b. Olah Data Peta Koordinat
+                    const koordinatRaw = row['KOORDINAT'];
+                    if (koordinatRaw && koordinatRaw.includes(',')) {
+                        // Memisahkan latitude dan longitude
+                        const coords = koordinatRaw.split(',');
+                        const lat = parseFloat(coords[0].trim());
+                        const lng = parseFloat(coords[1].trim());
+
+                        // Memastikan koordinat valid
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            // Buat Popup Informasi pada Marker Peta
+                            const popupText = `
+                                <b>Alamat:</b> ${row['ALAMAT'] || '-'}<br>
+                                <b>Jenis Lampu:</b> ${row['JENIS LAMPU'] || '-'}<br>
+                                <b>Watt:</b> ${row['WATT'] || '-'} W<br>
+                                <b>Kondisi:</b> ${row['NYALA / PADAM PADA SIANG HARI'] || '-'}
+                            `;
+
+                            L.marker([lat, lng])
+                             .addTo(map)
+                             .bindPopup(popupText);
+                            
+                            markersAdded++;
+                        }
+                    }
                 });
 
+                // 3. Buat Grafik Chart.js
                 const labels = Object.keys(lampCounts);
                 const values = Object.values(lampCounts);
 
-                // Membuat Grafik Bar
                 const ctx = document.getElementById('myChart').getContext('2d');
                 new Chart(ctx, {
                     type: 'bar',
@@ -79,22 +143,13 @@
                     options: {
                         responsive: true,
                         scales: {
-                            y: {
-                                beginAtZero: true,
-                                title: {
-                                    display: true,
-                                    text: 'Jumlah Titik'
-                                }
-                            },
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Jenis Lampu'
-                                }
-                            }
+                            y: { beginAtZero: true }
                         }
                     }
                 });
+            },
+            error: function(err) {
+                console.error("Gagal membaca CSV:", err);
             }
         });
     </script>
